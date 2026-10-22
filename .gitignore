@@ -6,3 +6,5 @@ dist/
 pipeline-output.json
 .env
 pr-body.md
+.env.example
+

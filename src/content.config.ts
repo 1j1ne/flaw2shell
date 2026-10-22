@@ -23,6 +23,21 @@ const quizItem = z.object({
   explain: z.string().optional(),
 });
 
+/** 챌린지 텍스트는 문자열 또는 {ko,en} (T 와 동일) */
+const i18nText = z.union([z.string(), z.object({ ko: z.string(), en: z.string() })]);
+
+/** 🚩 선택 CTF 챌린지 블록 — 정답 평문이 아니라 SHA-256 해시만 둔다 */
+const challenge = z.object({
+  flag_sha256: z.string().regex(/^[a-f0-9]{64}$/, 'flag_sha256 는 64자리 소문자 hex (평문 플래그는 넣지 말 것)'),
+  flag_format: z.string().optional(),
+  env: z.enum(['docker-isolated', 'vulhub']).default('docker-isolated'),
+  lab: z.string().optional(),      // labs/<path> (기본값: labs/<id>)
+  vulhub: z.string().optional(),   // vulhub 저장소 경로 (env: vulhub)
+  objective: i18nText.optional(),
+  tasks: z.array(i18nText).default([]),
+  hints: z.array(i18nText).default([]),
+});
+
 /** 파이프라인 필수 필드 — published 일 때 엄격 적용 */
 const strict = z.object({
   id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'id 는 URL-safe 해야 함 (예: CVE-2026-6722)'),
@@ -60,6 +75,7 @@ const posts = defineCollection({
       track: z.enum(['ai']).optional(),
       sample: z.boolean().default(false),
       quiz: z.array(quizItem).default([]),
+      challenge: challenge.optional(),
     })
     .passthrough()
     .superRefine((d, ctx) => {

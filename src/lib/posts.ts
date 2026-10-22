@@ -12,6 +12,18 @@ import { findWeaponized } from '../plugins/safety-patterns.mjs';
 export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 export const SEVERITY_ORDER: Severity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 
+type I18nText = string | { ko: string; en: string };
+export interface ChallengeData {
+  flag_sha256: string;
+  flag_format?: string;
+  env: 'docker-isolated' | 'vulhub';
+  lab?: string;
+  vulhub?: string;
+  objective?: I18nText;
+  tasks: I18nText[];
+  hints: I18nText[];
+}
+
 export interface Post {
   id: string;
   entry: CollectionEntry<'posts'>;
@@ -31,6 +43,8 @@ export interface Post {
   tags: string[];
   isAi: boolean;
   sample: boolean;
+  /** 🚩 선택 CTF 챌린지 (frontmatter.challenge) */
+  challenge?: ChallengeData;
   /** 본문에서 찾지 못한 고정 섹션 key 목록 */
   missingSections: string[];
   /** 검색용 평문 */
@@ -129,6 +143,7 @@ export async function getPublishedPosts(): Promise<Post[]> {
       isAi:
         d.track === 'ai' || AI_CWES.has(d.cwe) || tags.some((t) => /^(ai|llm|ml|genai)$/i.test(t)),
       sample: !!d.sample,
+      challenge: (d as { challenge?: ChallengeData }).challenge,
       missingSections: missing,
       text: toPlain(`${d.title ?? ''} ${body} ${enBody}`),
     };

@@ -7,6 +7,7 @@ import DifficultyBadge from '../../components/DifficultyBadge.astro';
 import CweTag from '../../components/CweTag.astro';
 import PostCard from '../../components/PostCard.astro';
 import Disclaimer from '../../components/Disclaimer.astro';
+import Challenge from '../../components/Challenge.astro';
 import { getPublishedPosts, fmtDate, type Post } from '../../lib/posts';
 import { SECTIONS } from '../../lib/sections.mjs';
 import { url } from '../../lib/url';
@@ -26,6 +27,9 @@ const { Content } = await render(p.entry);
 const ContentEn = p.en ? (await render(p.en)).Content : null;
 const hasEn = !!ContentEn;
 const related = all.filter((x) => x.cwe === p.cwe && x.id !== p.id).slice(0, 4);
+// 🚩 챌린지 랩 링크 — 저장소의 labs/<id>/ 로 연결 (기본 브랜치 기준)
+const REPO_TREE = 'https://github.com/1j1ne/flaw2shell/tree/main/';
+const labHref = p.challenge ? REPO_TREE + (p.challenge.lab ?? `labs/${p.id}`) : undefined;
 const isCve = /^CVE-\d{4}-\d{4,}$/i.test(p.id);
 const official = isCve
   ? [
@@ -100,6 +104,7 @@ const official = isCve
         )}
         <div class="prose body-ko" lang="ko"><Content /></div>
         {ContentEn && <div class="prose body-en" lang="en"><ContentEn /></div>}
+        {p.challenge && <Challenge data={p.challenge} labHref={labHref} />}
       </div>
     </div>
 

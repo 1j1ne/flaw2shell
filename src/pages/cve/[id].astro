@@ -1,0 +1,133 @@
+---
+import { render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import T from '../../components/T.astro';
+import SeverityBadge from '../../components/SeverityBadge.astro';
+import DifficultyBadge from '../../components/DifficultyBadge.astro';
+import CweTag from '../../components/CweTag.astro';
+import PostCard from '../../components/PostCard.astro';
+import Disclaimer from '../../components/Disclaimer.astro';
+import { getPublishedPosts, fmtDate, type Post } from '../../lib/posts';
+import { SECTIONS } from '../../lib/sections.mjs';
+import { url } from '../../lib/url';
+
+export async function getStaticPaths() {
+  // ★ 빌드 게이트: published 만 라우트 생성
+  const posts = await getPublishedPosts();
+  return posts.map((post) => ({ params: { id: post.id }, props: { post, all: posts } }));
+}
+
+interface Props { post: Post; all: Post[] }
+const { post: p, all } = Astro.props;
+// ★ 렌더 게이트: 혹시라도 비공개 문서가 들어오면 빌드를 실패시킨다
+if (p.entry.data.status !== 'published') throw new Error(`[gate] ${p.id} is not published`);
+
+const { Content } = await render(p.entry);
+const ContentEn = p.en ? (await render(p.en)).Content : null;
+const hasEn = !!ContentEn;
+const related = all.filter((x) => x.cwe === p.cwe && x.id !== p.id).slice(0, 4);
+const isCve = /^CVE-\d{4}-\d{4,}$/i.test(p.id);
+const official = isCve
+  ? [
+      { href: `https://nvd.nist.gov/vuln/detail/${p.id}`, label: 'NVD' },
+      { href: `https://www.cve.org/CVERecord?id=${p.id}`, label: 'CVE.org' },
+    ]
+  : [];
+---
+<Base title={`${p.id} — ${p.title}`} description={p.summary}>
+  <article class={`post ${hasEn ? 'has-en' : 'no-en'}`}>
+    <nav class="crumbs" aria-label="breadcrumb">
+      <a href={url()}><T k="nav.home" /></a><span aria-hidden="true">/</span>
+      <a href={url(`class/${p.cwe}/`)}>{p.cwe}</a><span aria-hidden="true">/</span>
+      <span aria-current="page">{p.id}</span>
+    </nav>
+
+    <header class="post-head">
+      <h1 class="post-id">{p.id}</h1>
+      <p class="post-title"><T ko={p.title} en={p.titleEn ?? p.title} /></p>
+      <div class="post-meta">
+        <SeverityBadge severity={p.severity} cvss={p.cvss} size="md" />
+        <CweTag cwe={p.cwe} label={p.cweLabel} />
+        <DifficultyBadge difficulty={p.difficulty} inferred={p.difficultyInferred} />
+        {p.isAi && <a class="chip chip-ai" href={url('ai-security/')}>AI</a>}
+        <time datetime={p.date.toISOString()}>{fmtDate(p.date)}</time>
+        {p.generatedBy && (
+          <span class="chip chip-gen" title={`generated_by: ${p.generatedBy}`}>
+            <span aria-hidden="true">⚙</span> <T k="post.generated" />
+          </span>
+        )}
+      </div>
+      {official.length > 0 && (
+        <p class="post-official">
+          <span><T k="post.officialRefs" />:</span>
+          {official.map((o) => <a class="ext" href={o.href} target="_blank" rel="noopener noreferrer external">{o.label}</a>)}
+          <a href="#references" class="to-refs l-ko">References ↓</a><a href={hasEn ? '#en-references' : '#references'} class="to-refs l-en">References ↓</a>
+        </p>
+      )}
+    </header>
+
+    {p.sample && <div class="notice notice-sample" role="note"><strong>SAMPLE</strong> <T k="post.sample" /></div>}
+    <Disclaimer />
+
+    <div class="post-grid">
+      <aside class="toc" aria-label="목차 / Contents">
+        <details open>
+          <summary><T k="post.toc" /></summary>
+          <ol class="toc-list toc-ko">
+            {SECTIONS.map((s) => (
+              <li class={p.missingSections.includes(s.key) ? 'missing' : ''}>
+                <a href={`#${s.key}`} data-target={s.key}><span class="toc-n">{s.n}</span>{s.ko}</a>
+              </li>
+            ))}
+          </ol>
+          <ol class="toc-list toc-en" lang="en">
+            {SECTIONS.map((s) => (
+              <li class={p.missingSections.includes(s.key) ? 'missing' : ''}>
+                <a href={`#${hasEn ? 'en-' : ''}${s.key}`} data-target={`${hasEn ? 'en-' : ''}${s.key}`}><span class="toc-n">{s.n}</span>{s.en}</a>
+              </li>
+            ))}
+          </ol>
+        </details>
+        <a class="toc-quiz" href={url(`quiz/?post=${p.id}`)}>✎ <T k="post.quizCta" /></a>
+      </aside>
+
+      <div class="post-main">
+        {!hasEn && <p class="notice notice-lang only-en" role="note" lang="en"><T k="post.noTranslation" /></p>}
+        {p.missingSections.length > 0 && (
+          <p class="notice notice-warn" role="note">
+            <T k="post.missing" />: {p.missingSections.join(', ')}
+          </p>
+        )}
+        <div class="prose body-ko" lang="ko"><Content /></div>
+        {ContentEn && <div class="prose body-en" lang="en"><ContentEn /></div>}
+      </div>
+    </div>
+
+    {related.length > 0 && (
+      <section class="related">
+        <h2><T k="post.related" /> · {p.cwe}</h2>
+        <div class="cards">{related.map((r) => <PostCard post={r} />)}</div>
+      </section>
+    )}
+  </article>
+
+  <script is:inline>
+    // 모바일에서는 목차를 접어 본문이 먼저 보이게
+    if (window.matchMedia('(max-width: 960px)').matches) {
+      var det = document.querySelector('.toc details'); if (det) det.open = false;
+    }
+    // 목차 현재 섹션 하이라이트
+    (function () {
+      var links = Array.prototype.slice.call(document.querySelectorAll('.toc-list a'));
+      if (!('IntersectionObserver' in window) || !links.length) return;
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (!e.isIntersecting) return;
+          var id = e.target.id;
+          links.forEach(function (a) { a.classList.toggle('active', a.dataset.target === id); });
+        });
+      }, { rootMargin: '-15% 0px -75% 0px' });
+      document.querySelectorAll('.prose h2[id]').forEach(function (h) { io.observe(h); });
+    })();
+  </script>
+</Base>

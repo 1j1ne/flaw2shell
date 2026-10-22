@@ -1,0 +1,29 @@
+---
+import type { Post } from '../lib/posts';
+import { fmtDate } from '../lib/posts';
+import { url } from '../lib/url';
+import SeverityBadge from './SeverityBadge.astro';
+import DifficultyBadge from './DifficultyBadge.astro';
+import CweTag from './CweTag.astro';
+import T from './T.astro';
+interface Props { post: Post }
+const { post: p } = Astro.props;
+---
+<article class="card" data-id={p.id} data-severity={p.severity} data-difficulty={p.difficulty} data-cwe={p.cwe}>
+  <header class="card-top">
+    <SeverityBadge severity={p.severity} cvss={p.cvss} />
+    <time datetime={p.date.toISOString()}>{fmtDate(p.date)}</time>
+  </header>
+  <h3 class="card-title">
+    <a href={url(`cve/${p.id}/`)}>
+      <span class="card-id">{p.id}</span>
+      <span class="card-sub"><T ko={p.title} en={p.titleEn ?? p.title} /></span>
+    </a>
+  </h3>
+  <p class="card-summary"><T ko={p.summary} en={p.summaryEn ?? p.summary} /></p>
+  <footer class="card-meta">
+    <CweTag cwe={p.cwe} label={p.cweLabel} />
+    <DifficultyBadge difficulty={p.difficulty} inferred={p.difficultyInferred} />
+    {p.isAi && <span class="chip chip-ai">AI</span>}
+  </footer>
+</article>

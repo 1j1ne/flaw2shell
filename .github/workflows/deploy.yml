@@ -1,0 +1,55 @@
+# 콘텐츠 커밋(외부 CVE 파이프라인 포함) → 빌드 + 게이트 검증 → GitHub Pages 배포
+# - PR: 빌드/검증만 (파이프라인이 PR로 올리면 사람 검토 + CI 통과 후 머지)
+# - main push / repository_dispatch(content-updated) / 수동 실행: 배포
+name: build-and-deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  repository_dispatch:
+    types: [content-updated]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Build + verify (status gate, 8 sections, weaponized-pattern scan)
+        run: npm run build
+        env:
+          # 무기화 패턴이 원본에 있으면 배포 중단
+          F2S_STRICT_SAFETY: '1'
+          # 커스텀 도메인이면 SITE_URL=https://your.domain, BASE_PATH=/ 로 바꾼다
+          SITE_URL: https://${{ github.repository_owner }}.github.io
+          BASE_PATH: /${{ github.event.repository.name }}/
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

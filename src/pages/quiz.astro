@@ -1,0 +1,209 @@
+---
+import Base from '../layouts/Base.astro';
+import T from '../components/T.astro';
+import { getPublishedPosts } from '../lib/posts';
+import { buildQuiz, buildCards } from '../lib/quiz';
+import { BASE_URL } from '../lib/url';
+import { UI } from '../lib/i18n';
+
+const posts = await getPublishedPosts();
+const data = {
+  questions: buildQuiz(posts),
+  cards: buildCards(posts, BASE_URL),
+  posts: posts.map((p) => ({ id: p.id, cwe: p.cwe })),
+  base: BASE_URL,
+  ui: Object.fromEntries(
+    (['quiz.check', 'quiz.next', 'quiz.correct', 'quiz.wrong', 'quiz.score', 'quiz.restart', 'quiz.retryWrong', 'quiz.flip', 'quiz.source', 'quiz.done', 'search.none'] as const).map((k) => [k, UI[k]]),
+  ),
+};
+---
+<Base title="퀴즈 · Quiz" active="quiz">
+  <header class="page-head">
+    <h1><T k="quiz.title" /></h1>
+    <p class="lead"><T k="quiz.lead" /></p>
+  </header>
+
+  <form class="quiz-controls" id="qz-controls" onsubmit="return false">
+    <div class="seg" role="radiogroup" aria-label="mode">
+      <label><input type="radio" name="mode" value="quiz" checked /><span><T k="quiz.mode.quiz" /></span></label>
+      <label><input type="radio" name="mode" value="cards" /><span><T k="quiz.mode.cards" /></span></label>
+    </div>
+    <label class="select">
+      <span><T ko="범위" en="Scope" /></span>
+      <select name="scope" id="qz-scope">
+        <option value="all">전체 · All</option>
+        <option value="post">포스트 문제 · From posts</option>
+        <option value="class">CWE 개념 드릴 · CWE drill</option>
+        {posts.map((p) => <option value={`post:${p.id}`}>{p.id}</option>)}
+      </select>
+    </label>
+    <label class="select">
+      <span><T k="filter.difficulty" /></span>
+      <select name="difficulty">
+        <option value="">전체 · All</option>
+        <option value="intro">입문 · Intro</option>
+        <option value="intermediate">중급 · Intermediate</option>
+        <option value="advanced">고급 · Advanced</option>
+      </select>
+    </label>
+  </form>
+
+  <section id="qz-app" class="quiz-app" aria-live="polite">
+    <noscript><p class="empty">퀴즈는 JavaScript가 필요합니다. / The quiz requires JavaScript.</p></noscript>
+  </section>
+
+  <script is:inline type="application/json" id="qz-data" set:html={JSON.stringify(data).replace(/</g, '\\u003c')} />
+  <script is:inline>
+    (function () {
+      var D = JSON.parse(document.getElementById('qz-data').textContent);
+      var app = document.getElementById('qz-app');
+      var form = document.getElementById('qz-controls');
+      var scopeSel = document.getElementById('qz-scope');
+      var MISSED = 'f2s-missed';
+      var state = { list: [], i: 0, score: 0, answered: false, picked: null, missed: [], flipped: false };
+
+      function lang() { return document.documentElement.dataset.lang === 'en' ? 'en' : 'ko'; }
+      function L(s) { return s ? (s[lang()] || s.ko) : ''; }
+      function U(k) { return L(D.ui[k]); }
+      function el(tag, attrs, kids) {
+        var e = document.createElement(tag);
+        if (attrs) for (var k in attrs) {
+          if (k === 'text') e.textContent = attrs[k];
+          else if (k === 'class') e.className = attrs[k];
+          else if (k.slice(0, 2) === 'on') e.addEventListener(k.slice(2), attrs[k]);
+          else e.setAttribute(k, attrs[k]);
+        }
+        (kids || []).forEach(function (c) { if (c) e.appendChild(c); });
+        return e;
+      }
+      function getMissed() { try { return JSON.parse(localStorage.getItem(MISSED) || '[]'); } catch (e) { return []; } }
+      function setMissed(a) { try { localStorage.setItem(MISSED, JSON.stringify(a)); } catch (e) {} }
+      function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+
+      // URL ?post= / ?cwe= 로 진입 시 범위 프리셋
+      var params = new URLSearchParams(location.search);
+      if (params.get('post')) scopeSel.value = 'post:' + params.get('post');
+      var cweFilter = params.get('cwe');
+
+      function filtered(items, isCard) {
+        var fd = new FormData(form), scope = fd.get('scope'), diff = fd.get('difficulty');
+        return items.filter(function (x) {
+          if (cweFilter && x.cwe !== cweFilter && !(isCard && x.id === 'card-' + cweFilter)) return false;
+          if (isCard) {
+            if (scope === 'post') return x.kind === 'post';
+            if (scope === 'class') return x.kind === 'class';
+            if (scope.indexOf('post:') === 0) return x.id === 'card-' + scope.slice(5);
+            return true;
+          }
+          if (diff && x.difficulty !== diff) return false;
+          if (scope === 'post') return x.source === 'post';
+          if (scope === 'class') return x.source === 'class';
+          if (scope.indexOf('post:') === 0) return x.post === scope.slice(5);
+          return true;
+        });
+      }
+      function mode() { return new FormData(form).get('mode'); }
+
+      function start(onlyMissed) {
+        var pool = mode() === 'cards' ? filtered(D.cards, true) : filtered(D.questions, false);
+        if (onlyMissed) { var m = getMissed(); pool = D.questions.filter(function (q) { return m.indexOf(q.id) >= 0; }); }
+        state = { list: shuffle(pool), i: 0, score: 0, answered: false, picked: null, missed: [], flipped: false };
+        render();
+      }
+
+      function renderQuiz() {
+        var q = state.list[state.i];
+        if (!q) return renderDone();
+        var name = 'qz-' + state.i;
+        var choices = q.choices.map(function (c, idx) {
+          var cls = 'qz-choice';
+          if (state.answered && idx === q.answer) cls += ' is-correct';
+          if (state.answered && idx === state.picked && idx !== q.answer) cls += ' is-wrong';
+          var input = el('input', { type: 'radio', name: name, value: idx });
+          if (state.picked === idx) input.checked = true;
+          if (state.answered) input.disabled = true;
+          input.addEventListener('change', function () { state.picked = idx; check.disabled = false; });
+          return el('label', { class: cls }, [input, el('span', { text: L(c) })]);
+        });
+        var check = el('button', { type: 'button', class: 'btn btn-primary', text: state.answered ? U('quiz.next') : U('quiz.check'), onclick: function () {
+          if (!state.answered) {
+            if (state.picked == null) return;
+            state.answered = true;
+            var ok = state.picked === q.answer;
+            var m = getMissed();
+            if (ok) { state.score++; m = m.filter(function (x) { return x !== q.id; }); }
+            else { state.missed.push(q.id); if (m.indexOf(q.id) < 0) m.push(q.id); }
+            setMissed(m);
+          } else { state.i++; state.answered = false; state.picked = null; }
+          render();
+        } });
+        if (!state.answered && state.picked == null) check.disabled = true;
+        var kids = [
+          el('div', { class: 'qz-progress' }, [
+            el('span', { text: (state.i + 1) + ' / ' + state.list.length }),
+            el('span', { text: U('quiz.score') + ' ' + state.score }),
+            el('div', { class: 'qz-bar', 'aria-hidden': 'true' }, [el('i', { style: 'width:' + (100 * state.i / state.list.length) + '%' })]),
+          ]),
+          el('p', { class: 'qz-q', text: L(q.q) }),
+          el('fieldset', { class: 'qz-choices' }, [el('legend', { class: 'sr-only', text: L(q.q) })].concat(choices)),
+        ];
+        if (state.answered) {
+          var ok = state.picked === q.answer;
+          kids.push(el('div', { class: 'qz-feedback ' + (ok ? 'ok' : 'no'), role: 'status' }, [
+            el('strong', { text: (ok ? '✓ ' + U('quiz.correct') : '✗ ' + U('quiz.wrong')) }),
+            q.explain ? el('p', { text: L(q.explain) }) : null,
+            q.post ? el('a', { href: D.base + 'cve/' + q.post + '/', text: U('quiz.source') + ': ' + q.post + ' →' }) : el('a', { href: D.base + 'class/' + q.cwe + '/', text: q.cwe + ' →' }),
+          ]));
+        }
+        kids.push(el('div', { class: 'qz-actions' }, [check]));
+        app.replaceChildren(el('div', { class: 'qz-card' }, kids));
+        var f = app.querySelector('input:not([disabled])') || check; if (document.activeElement && app.contains(document.activeElement)) f.focus();
+      }
+
+      function renderDone() {
+        var total = state.list.length;
+        if (!total) return app.replaceChildren(el('p', { class: 'empty', text: U('search.none') }));
+        var m = getMissed();
+        app.replaceChildren(el('div', { class: 'qz-card qz-done' }, [
+          el('p', { class: 'qz-q', text: U('quiz.done') }),
+          el('p', { class: 'qz-big', text: state.score + ' / ' + total }),
+          el('div', { class: 'qz-actions' }, [
+            el('button', { type: 'button', class: 'btn', text: U('quiz.restart'), onclick: function () { start(false); } }),
+            m.length ? el('button', { type: 'button', class: 'btn btn-primary', text: U('quiz.retryWrong') + ' (' + m.length + ')', onclick: function () { start(true); } }) : null,
+          ]),
+        ]));
+      }
+
+      function renderCards() {
+        var c = state.list[state.i];
+        if (!c) return app.replaceChildren(el('p', { class: 'empty', text: U('search.none') }));
+        var face = el('button', { type: 'button', class: 'fc' + (state.flipped ? ' is-flipped' : ''), 'aria-pressed': String(state.flipped), onclick: function () { state.flipped = !state.flipped; render(); } }, [
+          el('span', { class: 'fc-side', text: state.flipped ? 'BACK' : 'FRONT' }),
+          el('span', { class: 'fc-text', text: L(state.flipped ? c.back : c.front) }),
+          el('span', { class: 'fc-hint', text: U('quiz.flip') + ' (Space)' }),
+        ]);
+        app.replaceChildren(el('div', { class: 'qz-card' }, [
+          el('div', { class: 'qz-progress' }, [el('span', { text: (state.i + 1) + ' / ' + state.list.length })]),
+          face,
+          el('div', { class: 'qz-actions' }, [
+            el('button', { type: 'button', class: 'btn', text: '←', 'aria-label': 'Previous', onclick: function () { state.i = (state.i - 1 + state.list.length) % state.list.length; state.flipped = false; render(); } }),
+            el('a', { class: 'btn btn-ghost', href: c.href, text: U('quiz.source') + ' →' }),
+            el('button', { type: 'button', class: 'btn btn-primary', text: '→', 'aria-label': 'Next', onclick: function () { state.i = (state.i + 1) % state.list.length; state.flipped = false; render(); } }),
+          ]),
+        ]));
+      }
+
+      function render() { mode() === 'cards' ? renderCards() : renderQuiz(); }
+
+      form.addEventListener('change', function () { cweFilter = null; start(false); });
+      document.addEventListener('f2s:lang', render);
+      document.addEventListener('keydown', function (e) {
+        if (mode() !== 'cards' || /input|select|textarea/i.test(document.activeElement.tagName)) return;
+        if (e.key === ' ' && document.activeElement.className.indexOf('fc') !== 0) { e.preventDefault(); state.flipped = !state.flipped; render(); }
+        if (e.key === 'ArrowRight') { state.i = (state.i + 1) % state.list.length; state.flipped = false; render(); }
+        if (e.key === 'ArrowLeft') { state.i = (state.i - 1 + state.list.length) % state.list.length; state.flipped = false; render(); }
+      });
+      start(false);
+    })();
+  </script>
+</Base>

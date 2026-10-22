@@ -1,0 +1,60 @@
+---
+import Base from '../../layouts/Base.astro';
+import T from '../../components/T.astro';
+import PostCard from '../../components/PostCard.astro';
+import DifficultyBadge from '../../components/DifficultyBadge.astro';
+import { getPublishedPosts, type Post } from '../../lib/posts';
+import { CWE_CATALOG, FAMILIES, getCwe, type CweInfo } from '../../data/cwe';
+import { url } from '../../lib/url';
+
+export async function getStaticPaths() {
+  const posts = await getPublishedPosts();
+  const ids = new Set([...CWE_CATALOG.map((c) => c.id), ...posts.map((p) => p.cwe)]);
+  return [...ids].map((cwe) => ({
+    params: { cwe },
+    props: { cwe, posts: posts.filter((p) => p.cwe === cwe) },
+  }));
+}
+interface Props { cwe: string; posts: Post[] }
+const { cwe, posts } = Astro.props;
+const info: CweInfo | undefined = getCwe(cwe);
+const name = info?.name ?? { ko: posts[0]?.cweLabel ?? cwe, en: posts[0]?.cweLabel ?? cwe };
+const num = cwe.replace(/\D/g, '');
+---
+<Base title={`${cwe} ${name.en}`} description={info?.desc.ko} active="classes">
+  <nav class="crumbs" aria-label="breadcrumb">
+    <a href={url('classes/')}><T k="nav.classes" /></a><span aria-hidden="true">/</span><span aria-current="page">{cwe}</span>
+  </nav>
+  <header class="page-head">
+    <p class="kicker">{info ? <T ko={FAMILIES[info.family].ko} en={FAMILIES[info.family].en} /> : 'CWE'}</p>
+    <h1><span class="mono">{cwe}</span> <T ko={name.ko} en={name.en} /></h1>
+    {info && <p class="lead"><T ko={info.desc.ko} en={info.desc.en} /></p>}
+    <p class="post-meta">
+      {info && <DifficultyBadge difficulty={info.difficulty} />}
+      <a class="ext" href={`https://cwe.mitre.org/data/definitions/${num}.html`} target="_blank" rel="noopener noreferrer external"><T k="class.mitre" /></a>
+    </p>
+  </header>
+
+  {info && (
+    <section class="pattern-grid" aria-label="pattern">
+      <div class="pattern-box">
+        <h2><T k="class.pattern" /></h2>
+        <p><T ko={info.pattern.ko} en={info.pattern.en} /></p>
+      </div>
+      <div class="pattern-box pattern-fix">
+        <h2><T k="class.fix" /></h2>
+        <p><T ko={info.fix.ko} en={info.fix.en} /></p>
+      </div>
+    </section>
+  )}
+
+  <section>
+    <h2 class="section-title">{posts.length} <T k="classes.posts" /></h2>
+    {posts.length ? (
+      <div class="cards">{posts.map((p) => <PostCard post={p} />)}</div>
+    ) : (
+      <p class="empty"><T k="classes.noPosts" /></p>
+    )}
+    <p><a href={url(`quiz/?cwe=${cwe}`)}>✎ <T ko={`${cwe} 퀴즈 풀기`} en={`Quiz on ${cwe}`} /></a></p>
+  </section>
+</Base>

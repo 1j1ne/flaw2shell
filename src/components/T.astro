@@ -1,0 +1,8 @@
+---
+/** 이중 언어 텍스트: <T k="nav.home" /> 또는 <T ko="…" en="…" /> */
+import { UI, type UIKey } from '../lib/i18n';
+interface Props { k?: UIKey; ko?: string; en?: string }
+const { k, ko, en } = Astro.props;
+const s = k ? UI[k] : { ko: ko ?? '', en: en ?? ko ?? '' };
+---
+{s.ko === s.en ? <Fragment>{s.ko}</Fragment> : <><span class="l-ko">{s.ko}</span><span class="l-en" lang="en">{s.en}</span></>}

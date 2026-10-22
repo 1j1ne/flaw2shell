@@ -1,0 +1,137 @@
+---
+import Base from '../layouts/Base.astro';
+import T from '../components/T.astro';
+import PostCard from '../components/PostCard.astro';
+import { getPublishedPosts, SEVERITY_ORDER } from '../lib/posts';
+import { url } from '../lib/url';
+
+const posts = await getPublishedPosts();
+const classes = new Set(posts.map((p) => p.cwe)).size;
+const diffs = ['intro', 'intermediate', 'advanced'] as const;
+---
+<Base active="home">
+  <section class="hero">
+    <p class="hero-kicker"><span class="logo-prompt">$</span> diff --stat patch.c</p>
+    <h1><T k="site.tagline" /></h1>
+    <p class="lead"><T k="site.desc" /></p>
+    <dl class="stats">
+      <div><dt><T ko="게시된 해설" en="Write-ups" /></dt><dd>{posts.length}</dd></div>
+      <div><dt><T ko="취약점 클래스" en="Classes" /></dt><dd>{classes}</dd></div>
+      <div><dt><T ko="무기화 PoC" en="Weaponized PoCs" /></dt><dd>0</dd></div>
+    </dl>
+  </section>
+
+  <section class="feed" aria-labelledby="feed-h">
+    <div class="feed-head">
+      <h2 id="feed-h"><T k="home.latest" /></h2>
+      <span class="result-count" id="result-count" aria-live="polite"><b id="rc-n">{posts.length}</b> <T k="search.count" /></span>
+    </div>
+
+    <form class="filters" id="filters" role="search" onsubmit="return false">
+      <label class="search">
+        <span class="sr-only"><T k="search.label" /></span>
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="q" name="q" type="search" autocomplete="off" spellcheck="false"
+          placeholder="CVE ID, CWE, 키워드 검색…  ( / )" data-ph-en="Search CVE ID, CWE, keyword…  ( / )" data-ph-ko="CVE ID, CWE, 키워드 검색…  ( / )" />
+      </label>
+      <fieldset class="chips">
+        <legend><T k="filter.difficulty" /></legend>
+        <label><input type="radio" name="d" value="" checked /><span><T k="filter.all" /></span></label>
+        {diffs.map((d) => <label><input type="radio" name="d" value={d} /><span><T k={`diff.${d}`} /></span></label>)}
+      </fieldset>
+      <fieldset class="chips">
+        <legend><T k="filter.severity" /></legend>
+        <label><input type="radio" name="s" value="" checked /><span><T k="filter.all" /></span></label>
+        {SEVERITY_ORDER.map((s) => <label><input type="radio" name="s" value={s} /><span class={`chip-sev-${s.toLowerCase()}`}>{s}</span></label>)}
+      </fieldset>
+    </form>
+
+    {posts.length === 0 ? (
+      <p class="empty"><T k="home.empty" /></p>
+    ) : (
+      <div class="cards" id="cards">{posts.map((p) => <PostCard post={p} />)}</div>
+    )}
+    <p class="empty" id="no-results" hidden><T k="search.none" /></p>
+  </section>
+
+  <script define:vars={{ indexUrl: url('search.json') }} is:inline>
+    (function () {
+      var form = document.getElementById('filters');
+      var q = document.getElementById('q');
+      var grid = document.getElementById('cards');
+            var none = document.getElementById('no-results');
+      if (!grid) return;
+      var cards = Array.prototype.slice.call(grid.children);
+      var index = null, loading = null;
+
+      function load() {
+        if (index) return Promise.resolve();
+        if (loading) return loading;
+        loading = fetch(indexUrl).then(function (r) { return r.json(); }).then(function (d) {
+          index = {}; d.forEach(function (p) { index[p.id] = p; });
+        }).catch(function () { index = {}; });
+        return loading;
+      }
+      function norm(s) { return String(s || '').toLowerCase().normalize('NFKC'); }
+      function score(p, toks) {
+        var total = 0;
+        for (var i = 0; i < toks.length; i++) {
+          var t = toks[i], s = 0;
+          if (norm(p.id) === t) s += 100; else if (norm(p.id).indexOf(t) >= 0) s += 50;
+          if (norm(p.cwe).indexOf(t) >= 0 || norm(p.cweLabel).indexOf(t) >= 0) s += 40;
+          if (norm(p.title + ' ' + p.titleEn).indexOf(t) >= 0) s += 20;
+          if (norm(p.tags.join(' ')).indexOf(t) >= 0) s += 15;
+          if (norm(p.text).indexOf(t) >= 0) s += 5;
+          if (!s) return 0; // 모든 토큰이 어딘가에 있어야 함(AND)
+          total += s;
+        }
+        return total;
+      }
+      function apply() {
+        var fd = new FormData(form);
+        var d = fd.get('d') || '', s = fd.get('s') || '';
+        var toks = norm(q.value).split(/\s+/).filter(Boolean);
+        var shown = [];
+        cards.forEach(function (c, i) {
+          var ok = (!d || c.dataset.difficulty === d) && (!s || c.dataset.severity === s);
+          var sc = 1;
+          if (ok && toks.length) {
+            var p = index && index[c.dataset.id];
+            // 인덱스 로딩 전에는 카드 텍스트로 임시 매칭
+            sc = p ? score(p, toks) : (toks.every(function (t) { return norm(c.textContent).indexOf(t) >= 0; }) ? 1 : 0);
+            ok = sc > 0;
+          }
+          c.hidden = !ok;
+          if (ok) shown.push({ c: c, sc: sc, i: i });
+        });
+        if (toks.length) shown.sort(function (a, b) { return b.sc - a.sc || a.i - b.i; });
+        else shown.sort(function (a, b) { return a.i - b.i; });
+        shown.forEach(function (x) { grid.appendChild(x.c); });
+        cards.forEach(function (c) { if (c.hidden) grid.appendChild(c); });
+        document.getElementById('rc-n').textContent = shown.length;
+        none.hidden = shown.length > 0;
+        var params = new URLSearchParams();
+        if (q.value) params.set('q', q.value);
+        if (d) params.set('d', d);
+        if (s) params.set('s', s);
+        var qs = params.toString();
+        history.replaceState(null, '', qs ? '?' + qs : location.pathname);
+      }
+      // URL 상태 복원
+      var init = new URLSearchParams(location.search);
+      if (init.get('q')) q.value = init.get('q');
+      ['d', 's'].forEach(function (k) {
+        var v = init.get(k); if (!v) return;
+        var el = form.querySelector('input[name="' + k + '"][value="' + v + '"]'); if (el) el.checked = true;
+      });
+      form.addEventListener('input', function () { if (q.value) load().then(apply); apply(); });
+      q.addEventListener('focus', load);
+      if (init.toString()) load().then(apply);
+      document.addEventListener('keydown', function (e) {
+        if (e.key === '/' && !/input|textarea|select/i.test(document.activeElement.tagName)) { e.preventDefault(); q.focus(); }
+      });
+      function ph() { var l = document.documentElement.dataset.lang; q.placeholder = q.dataset['ph' + (l === 'en' ? 'En' : 'Ko')]; }
+      ph(); document.addEventListener('f2s:lang', ph);
+    })();
+  </script>
+</Base>

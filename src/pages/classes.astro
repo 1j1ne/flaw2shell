@@ -1,0 +1,73 @@
+---
+import Base from '../layouts/Base.astro';
+import T from '../components/T.astro';
+import DifficultyBadge from '../components/DifficultyBadge.astro';
+import { getPublishedPosts } from '../lib/posts';
+import { CWE_CATALOG, FAMILIES, cweNumber, type Family } from '../data/cwe';
+import { url } from '../lib/url';
+
+const posts = await getPublishedPosts();
+const count = new Map<string, number>();
+posts.forEach((p) => count.set(p.cwe, (count.get(p.cwe) ?? 0) + 1));
+
+// 카탈로그에 없는 CWE 의 글도 "기타"로 노출
+const known = new Set(CWE_CATALOG.map((c) => c.id));
+const unknown = [...new Map(posts.filter((p) => !known.has(p.cwe)).map((p) => [p.cwe, p])).values()];
+
+const families = (Object.keys(FAMILIES) as Family[]).map((f) => ({
+  f,
+  items: CWE_CATALOG.filter((c) => c.family === f).sort(
+    (a, b) => (count.get(b.id) ?? 0) - (count.get(a.id) ?? 0) || cweNumber(a.id) - cweNumber(b.id),
+  ),
+}));
+---
+<Base title="취약점 클래스 · Classes" active="classes">
+  <header class="page-head">
+    <h1><T k="classes.title" /></h1>
+    <p class="lead"><T k="classes.lead" /></p>
+    <nav class="jump" aria-label="families">
+      {families.map(({ f }) => <a href={`#fam-${f}`}><T ko={FAMILIES[f].ko} en={FAMILIES[f].en} /></a>)}
+    </nav>
+  </header>
+
+  {families.map(({ f, items }) => (
+    <section class="family" id={`fam-${f}`} aria-labelledby={`fh-${f}`}>
+      <h2 id={`fh-${f}`}><T ko={FAMILIES[f].ko} en={FAMILIES[f].en} /></h2>
+      <ul class="class-grid">
+        {items.map((c) => {
+          const n = count.get(c.id) ?? 0;
+          return (
+            <li class={`class-card ${n ? 'has-posts' : 'no-posts'}`}>
+              <a href={url(`class/${c.id}/`)}>
+                <span class="class-id">{c.id}</span>
+                <span class="class-name"><T ko={c.name.ko} en={c.name.en} /></span>
+                <span class="class-desc"><T ko={c.desc.ko} en={c.desc.en} /></span>
+                <span class="class-foot">
+                  <DifficultyBadge difficulty={c.difficulty} />
+                  <span class="class-count">{n} <T k="classes.posts" /></span>
+                </span>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  ))}
+
+  {unknown.length > 0 && (
+    <section class="family">
+      <h2><T ko="기타" en="Other" /></h2>
+      <ul class="class-grid">
+        {unknown.map((p) => (
+          <li class="class-card has-posts">
+            <a href={url(`class/${p.cwe}/`)}>
+              <span class="class-id">{p.cwe}</span>
+              <span class="class-name">{p.cweLabel}</span>
+              <span class="class-foot"><span class="class-count">{count.get(p.cwe)} <T k="classes.posts" /></span></span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )}
+</Base>

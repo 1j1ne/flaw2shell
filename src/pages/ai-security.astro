@@ -1,0 +1,83 @@
+---
+import Base from '../layouts/Base.astro';
+import T from '../components/T.astro';
+import PostCard from '../components/PostCard.astro';
+import { getPublishedPosts } from '../lib/posts';
+import { url } from '../lib/url';
+
+const posts = (await getPublishedPosts()).filter((p) => p.isAi);
+
+// 개념 프라이머 — 원리와 방어만. 공격 프롬프트/페이로드 예시는 싣지 않는다(§7).
+const primers = [
+  {
+    cwe: 'CWE-1427',
+    title: { ko: '프롬프트 인젝션 (직접 · 간접)', en: 'Prompt injection (direct & indirect)' },
+    body: {
+      ko: 'LLM은 시스템 지시, 사용자 입력, 검색·도구로 가져온 문서를 모두 하나의 토큰 열로 받는다. 따라서 "데이터"에 섞인 문장이 "명령"처럼 작동할 수 있다. 간접 인젝션은 공격자가 모델이 나중에 읽을 웹페이지·메일·파일에 지시를 심는 형태다. 핵심 교훈: 입력 필터는 우회되기 쉬우므로, 모델이 조작되었다고 가정하고 그 피해 반경(도구 권한)을 줄여야 한다.',
+      en: 'An LLM receives system instructions, user input and retrieved documents as a single token stream, so sentences inside "data" can act as "commands". Indirect injection plants instructions in pages, emails or files the model will read later. Lesson: input filters are easy to bypass — assume the model can be steered and limit its blast radius (tool permissions).',
+    },
+  },
+  {
+    cwe: 'CWE-1426',
+    title: { ko: '출력 검증 부족 (Insecure output handling)', en: 'Insecure output handling' },
+    body: {
+      ko: '모델 출력이 셸, SQL, innerHTML, 코드 실행기 같은 고전적 싱크로 흘러가면 오래된 인젝션 클래스(CWE-78/89/79)가 새 입력원을 얻는다. 모델 출력은 항상 신뢰할 수 없는 사용자 입력으로 취급하고, 구조화 출력은 스키마로 검증한다.',
+      en: 'When model output flows into classic sinks — shell, SQL, innerHTML, code runners — old injection classes (CWE-78/89/79) get a new source. Treat output as untrusted user input and schema-validate structured output.',
+    },
+  },
+  {
+    cwe: 'CWE-502',
+    title: { ko: '모델 파일 역직렬화', en: 'Model file deserialization' },
+    body: {
+      ko: 'pickle 기반 모델/체크포인트 포맷은 객체 복원 과정에서 임의의 호출 가능 객체를 실행하도록 표현할 수 있다. 즉 "모델을 로드"하는 행위가 곧 "코드 실행"이 될 수 있다. 방어: 가중치 전용 포맷(safetensors 등) 사용, 출처·서명 확인, 신뢰할 수 없는 모델은 격리 환경에서만 로드.',
+      en: 'Pickle-based model/checkpoint formats can express arbitrary callables during object restoration, so "loading a model" can mean "running code". Defenses: weights-only formats (e.g. safetensors), provenance and signature checks, load untrusted models only in isolation.',
+    },
+  },
+  {
+    cwe: 'CWE-862',
+    title: { ko: '과도한 권한 (Excessive agency)', en: 'Excessive agency' },
+    body: {
+      ko: '에이전트에게 필요 이상의 도구·권한·자율성을 주면, 인젝션 한 번이 메일 발송·파일 삭제·결제 같은 실제 행위로 이어진다. 최소 권한 도구, 읽기/쓰기 분리, 되돌리기 어려운 행위에 대한 사람 확인이 기본 통제다.',
+      en: 'Give an agent more tools, permissions or autonomy than needed and a single injection becomes a real action — sending mail, deleting files, paying. Least-privilege tools, read/write separation and human confirmation for irreversible actions are the baseline controls.',
+    },
+  },
+  {
+    cwe: 'CWE-1039',
+    title: { ko: '적대적 입력 (Adversarial examples)', en: 'Adversarial examples' },
+    body: {
+      ko: '사람 눈에는 동일해 보이는 미세한 섭동이 분류기의 판단을 뒤집는다. 모델 단독 판단에 보안 결정을 맡기지 말고, 다른 신호와 교차 검증한다.',
+      en: 'Perturbations invisible to humans flip a classifier. Do not let a model alone make security decisions; cross-check with other signals.',
+    },
+  },
+];
+---
+<Base title="AI 보안 트랙 · AI Security" active="ai">
+  <header class="page-head">
+    <p class="kicker">TRACK</p>
+    <h1><T k="ai.title" /></h1>
+    <p class="lead"><T k="ai.lead" /></p>
+    <p class="muted">
+      <T ko="참고 프레임워크:" en="Reference frameworks:" />
+      <a class="ext" href="https://genai.owasp.org/llm-top-10/" target="_blank" rel="noopener noreferrer external">OWASP Top 10 for LLM Applications</a> ·
+      <a class="ext" href="https://atlas.mitre.org/" target="_blank" rel="noopener noreferrer external">MITRE ATLAS</a>
+    </p>
+  </header>
+
+  <section aria-labelledby="ai-posts">
+    <h2 class="section-title" id="ai-posts"><T k="ai.posts" /> · {posts.length}</h2>
+    {posts.length ? <div class="cards">{posts.map((p) => <PostCard post={p} />)}</div> : <p class="empty"><T k="ai.empty" /></p>}
+  </section>
+
+  <section aria-labelledby="ai-primers">
+    <h2 class="section-title" id="ai-primers"><T k="ai.primers" /></h2>
+    <div class="primer-grid">
+      {primers.map((p) => (
+        <article class="primer">
+          <a class="cwe" href={url(`class/${p.cwe}/`)}><span class="cwe-id">{p.cwe}</span></a>
+          <h3><T ko={p.title.ko} en={p.title.en} /></h3>
+          <p><T ko={p.body.ko} en={p.body.en} /></p>
+        </article>
+      ))}
+    </div>
+  </section>
+</Base>

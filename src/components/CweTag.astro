@@ -1,0 +1,7 @@
+---
+import { url } from '../lib/url';
+interface Props { cwe: string; label?: string; link?: boolean }
+const { cwe, label, link = true } = Astro.props;
+const Tag = link ? 'a' : 'span';
+---
+<Tag class="cwe" href={link ? url(`class/${cwe}/`) : undefined}><span class="cwe-id">{cwe}</span>{label && <span class="cwe-label">{label}</span>}</Tag>

@@ -1,0 +1,54 @@
+---
+import Base from '../layouts/Base.astro';
+import T from '../components/T.astro';
+import { url } from '../lib/url';
+---
+<Base title="소개 · About" active="about">
+  <article class="prose about">
+    <header class="page-head">
+      <h1><T ko="flaw2shell 은 무엇인가" en="What is flaw2shell?" /></h1>
+      <p class="lead"><T k="site.desc" /></p>
+    </header>
+
+    <section lang="ko" class="l-ko-block">
+      <h2>목적</h2>
+      <p>flaw2shell은 exploit-db 같은 익스플로잇 저장소가 아닙니다. 공개된 CVE 하나를 골라 <strong>무엇이 잘못되었는지(flaw)</strong>와 <strong>그 결함이 어떻게 코드 실행(shell)까지 이어지는지</strong>를 원리 중심으로 풀어 쓰고, 마지막에는 항상 <strong>“패치 한 줄이 왜 그 흐름을 끊는가”</strong>로 돌아옵니다.</p>
+      <p>모의해킹·보안 자격증(Security+, 정보보안기사, PT 등) 준비생, CTF 플레이어, 보안을 공부하는 개발자를 위해 만들었습니다. 같은 취약점 클래스(CWE)의 글을 묶어 읽으면 근본 원인과 패치의 반복되는 모양이 보입니다 — <a href={url('classes/')}>취약점 클래스</a>에서 시작해 보세요.</p>
+
+      <h2 id="principles">책임있는 설계 원칙</h2>
+      <ol>
+        <li><strong>개념·원리 중심.</strong> 복붙하면 동작하는 무기화된 익스플로잇, 리버스쉘, 셸코드, 페이로드 생성 명령은 싣지 않습니다. 빌드 단계에서 이런 패턴이 감지되면 해당 블록은 자동으로 렌더링에서 제외됩니다.</li>
+        <li><strong>격리된 실습 전제.</strong> 재현은 인터넷과 분리된 로컬 Docker 랩에서, 본인이 소유하거나 명시적으로 허가받은 시스템으로만 하세요. 권한 없는 시스템에 대한 시도는 대부분의 국가에서 불법입니다(국내: 정보통신망법 등).</li>
+        <li><strong>공식 패치로 연결.</strong> 모든 글은 벤더 어드바이저리, NVD/CVE 레코드, 패치 커밋 같은 1차 출처로 연결합니다. 독자가 가장 먼저 해야 할 일은 “업데이트”입니다.</li>
+        <li><strong>책임있는 공개(Responsible disclosure).</strong> 이미 공개되고 패치가 배포된 취약점만 다룹니다. 미공개 취약점을 발견했다면 이 사이트가 아니라 해당 벤더의 보안 연락처(security.txt, 버그바운티)나 KISA 등 조정 기관을 통해 제보하세요.</li>
+        <li><strong>저작권 존중.</strong> 뉴스·블로그 원문은 요약과 링크로만 소개하며 장문 인용이나 전재를 하지 않습니다.</li>
+        <li><strong>사람 검토 게이트.</strong> 글은 CVE 수집 파이프라인이 초안을 만들지만, 사람이 검토해 <code>status: published</code>로 바꾼 글만 게시됩니다. 검토 대기·초안 문서는 빌드에서 제외되고, 빌드 후 검증 스크립트가 이를 다시 확인합니다.</li>
+      </ol>
+
+      <h2>글의 구조</h2>
+      <p>모든 글은 같은 8개 섹션을 같은 순서로 가집니다: TL;DR → Flaw 분류 → 근본 원인 → 익스플로잇 흐름(개념) → 트리거 조건 → 패치 분석 → 탐지·완화 → References. 익스플로잇 흐름은 단계 다이어그램으로, 패치는 실제 diff의 추가/삭제 줄로 보여 줍니다.</p>
+
+      <h2>오류 제보</h2>
+      <p>기술적 오류나 저작권 문제를 발견하면 저장소 이슈로 알려 주세요. 정정 내역은 커밋 기록으로 남습니다.</p>
+    </section>
+
+    <section lang="en" class="l-en-block">
+      <h2>Purpose</h2>
+      <p>flaw2shell is not an exploit archive. Each post takes one public CVE and explains <strong>what the flaw is</strong> and <strong>how it escalates toward code execution</strong>, concept-first — and always returns to <strong>why the patched line breaks that chain</strong>.</p>
+      <p>It is written for pentest and security-cert candidates (Security+, PT, …), CTF players and developers learning security. Reading posts of the same weakness class (CWE) together reveals recurring root causes and fixes — start from <a href={url('classes/')}>Classes</a>.</p>
+
+      <h2 id="principles-en">Responsible design principles</h2>
+      <ol>
+        <li><strong>Concepts over payloads.</strong> No copy-paste weaponized exploits, reverse shells, shellcode or payload-generator commands. Blocks matching such patterns are removed automatically at build time.</li>
+        <li><strong>Isolated labs only.</strong> Reproduce only in an offline local Docker lab, on systems you own or are explicitly authorized to test. Unauthorized testing is illegal in most jurisdictions.</li>
+        <li><strong>Link to the official fix.</strong> Every post links to primary sources: vendor advisories, NVD/CVE records, patch commits. The first thing a reader should do is update.</li>
+        <li><strong>Responsible disclosure.</strong> We only cover vulnerabilities that are already public and patched. If you found an undisclosed issue, report it to the vendor (security.txt, bug bounty) or a coordinator such as CERT/CC — not here.</li>
+        <li><strong>Copyright.</strong> News and blog sources are summarized and linked, never republished at length.</li>
+        <li><strong>Human review gate.</strong> A CVE pipeline drafts posts, but only posts a human has reviewed and marked <code>status: published</code> are built. Drafts and review-pending files are excluded, and a post-build script re-verifies this.</li>
+      </ol>
+
+      <h2>Post structure</h2>
+      <p>Every post has the same eight sections in the same order: TL;DR → Flaw classification → Root cause → Exploit flow (conceptual) → Trigger conditions → Patch analysis → Detection &amp; mitigation → References.</p>
+    </section>
+  </article>
+</Base>

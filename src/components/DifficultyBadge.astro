@@ -1,0 +1,11 @@
+---
+import T from './T.astro';
+interface Props { difficulty: 'intro' | 'intermediate' | 'advanced'; inferred?: boolean }
+const { difficulty, inferred } = Astro.props;
+const dots = { intro: 1, intermediate: 2, advanced: 3 }[difficulty];
+---
+<span class={`lvl lvl-${difficulty}`}>
+  <span class="lvl-dots" aria-hidden="true">{[1, 2, 3].map((i) => <i class={i <= dots ? 'on' : ''} />)}</span>
+  <T k={`diff.${difficulty}`} />
+  {inferred && <span class="lvl-inferred" title="difficulty 필드가 없어 CWE로 추정 / inferred from CWE">*</span>}
+</span>

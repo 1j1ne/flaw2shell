@@ -1,0 +1,12 @@
+---
+/** 심각도 뱃지 — 색 + 라벨 텍스트 + 막대 개수(4/3/2/1)로 3중 구분 (색만으로 구분하지 않음) */
+import type { Severity } from '../lib/posts';
+interface Props { severity: Severity; cvss?: number; size?: 'sm' | 'md' }
+const { severity, cvss, size = 'sm' } = Astro.props;
+const level = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 }[severity];
+---
+<span class={`sev sev-${severity.toLowerCase()} sev-${size}`} title={`Severity: ${severity}${cvss != null ? ` (CVSS ${cvss})` : ''}`}>
+  <span class="sev-bars" aria-hidden="true">{[1, 2, 3, 4].map((i) => <i class={i <= level ? 'on' : ''} />)}</span>
+  <span class="sev-label">{severity}</span>
+  {cvss != null && <span class="sev-score">{cvss.toFixed(1)}</span>}
+</span>

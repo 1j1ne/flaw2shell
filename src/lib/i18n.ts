@@ -98,6 +98,24 @@ export const UI = {
     ko: '아직 AI 트랙에 게시된 글이 없습니다. 파이프라인이 track: ai 또는 AI 계열 CWE 글을 게시하면 여기에 표시됩니다.',
     en: 'No AI-track posts yet. Posts with track: ai or an AI-family CWE will appear here.',
   },
+  'ch.title': { ko: '챌린지', en: 'Challenge' },
+  'ch.env.docker': { ko: '격리 Docker 랩', en: 'Isolated Docker lab' },
+  'ch.env.vulhub': { ko: 'Vulhub 연계', en: 'Vulhub-backed' },
+  'ch.rule': {
+    ko: '본인이 소유한 인터넷 분리 환경에서만 실습하세요. 채점은 브라우저 안에서만 이뤄지며(정답은 서버에 없습니다), 무기화된 익스플로잇 작성은 학습자 몫입니다.',
+    en: 'Run only in an isolated environment you own. Grading happens entirely in your browser (the answer is not stored on any server), and writing a weaponized exploit is left to you.',
+  },
+  'ch.objective': { ko: '목표', en: 'Objective' },
+  'ch.tasks': { ko: '단계별 과제', en: 'Tasks' },
+  'ch.hints': { ko: '힌트', en: 'Hints' },
+  'ch.hint': { ko: '힌트', en: 'Hint' },
+  'ch.getLab': { ko: '실습 환경 받기', en: 'Get the lab' },
+  'ch.flagLabel': { ko: '플래그 제출 — 형식', en: 'Submit flag — format' },
+  'ch.submit': { ko: '제출', en: 'Submit' },
+  'ch.noscript': {
+    ko: '플래그 채점에는 JavaScript 가 필요합니다. 랩은 JavaScript 없이도 받을 수 있습니다.',
+    en: 'Flag checking needs JavaScript. You can still get the lab without it.',
+  },
 } satisfies Record<string, Str>;
 
 export type UIKey = keyof typeof UI;

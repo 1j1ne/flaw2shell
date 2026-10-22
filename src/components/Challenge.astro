@@ -1,0 +1,191 @@
+---
+/**
+ * 🚩 CTF 챌린지 블록 — 포스트 하단에 붙는다(선택).
+ *
+ * 설계 원칙 (§7 책임있는 공개와 일치):
+ *  - 정답 플래그 평문은 페이지에 넣지 않는다. frontmatter 에는 SHA-256 해시만 둔다.
+ *    채점은 브라우저에서 crypto.subtle.digest 로 끝나므로 서버/DB 가 필요 없다.
+ *  - 실습 대상(취약 코드)은 사이트가 아니라 저장소의 labs/<id>/ 에만 있고,
+ *    인터넷과 분리된 로컬 Docker 에서만 돌린다. 무기화된 익스플로잇은 학습자 몫이다.
+ *
+ * 텍스트 필드(objective/tasks/hints)는 문자열 또는 {ko,en} 를 받는다 → T 와 동일한 방식.
+ */
+import T from './T.astro';
+
+type I18nText = string | { ko: string; en: string };
+export interface ChallengeData {
+  flag_sha256: string;
+  flag_format?: string;
+  env?: 'docker-isolated' | 'vulhub';
+  lab?: string;
+  vulhub?: string;
+  objective?: I18nText;
+  tasks?: I18nText[];
+  hints?: I18nText[];
+}
+interface Props { data: ChallengeData; labHref?: string }
+
+const { data, labHref } = Astro.props;
+const env = data.env ?? 'docker-isolated';
+const fmt = data.flag_format ?? 'flaw2shell{...}';
+const vulhubHref = data.vulhub ? `https://github.com/vulhub/vulhub/tree/master/${data.vulhub}` : null;
+
+/** I18nText → T 에 넘길 {ko,en} */
+const pair = (v: I18nText) => (typeof v === 'string' ? { ko: v, en: v } : v);
+const objective = data.objective ? pair(data.objective) : null;
+const tasks = (data.tasks ?? []).map(pair);
+const hints = (data.hints ?? []).map(pair);
+---
+<section class="chal" id="challenge" aria-labelledby="chal-h">
+  <header class="chal-head">
+    <h2 id="chal-h"><span aria-hidden="true">🚩</span> <T k="ch.title" /></h2>
+    <span class={`chal-env chal-env-${env}`}>
+      <T k={env === 'vulhub' ? 'ch.env.vulhub' : 'ch.env.docker'} />
+    </span>
+  </header>
+
+  <p class="chal-rule"><T k="ch.rule" /></p>
+
+  {objective && (
+    <div class="chal-objective">
+      <h3><T k="ch.objective" /></h3>
+      <p><T ko={objective.ko} en={objective.en} /></p>
+    </div>
+  )}
+
+  {tasks.length > 0 && (
+    <div class="chal-tasks">
+      <h3><T k="ch.tasks" /></h3>
+      <ol>{tasks.map((t) => <li><T ko={t.ko} en={t.en} /></li>)}</ol>
+    </div>
+  )}
+
+  <div class="chal-actions">
+    {labHref && (
+      <a class="chal-getlab" href={labHref} target="_blank" rel="noopener noreferrer external">
+        <span aria-hidden="true">⬇</span> <T k="ch.getLab" />
+      </a>
+    )}
+    {vulhubHref && (
+      <a class="chal-vulhub" href={vulhubHref} target="_blank" rel="noopener noreferrer external">
+        Vulhub ↗
+      </a>
+    )}
+  </div>
+
+  {hints.length > 0 && (
+    <div class="chal-hints">
+      <h3><T k="ch.hints" /></h3>
+      {hints.map((h, i) => (
+        <details class="chal-hint">
+          <summary><T k="ch.hint" /> {i + 1}</summary>
+          <p><T ko={h.ko} en={h.en} /></p>
+        </details>
+      ))}
+    </div>
+  )}
+
+  <form class="chal-flag" data-hash={data.flag_sha256} autocomplete="off">
+    <label for="chal-input"><T k="ch.flagLabel" /> <code>{fmt}</code></label>
+    <div class="chal-row">
+      <input id="chal-input" name="flag" type="text" inputmode="text" spellcheck="false"
+             placeholder={fmt} aria-describedby="chal-result" />
+      <button type="submit"><T k="ch.submit" /></button>
+    </div>
+    <p id="chal-result" class="chal-result" role="status" aria-live="polite"></p>
+    <noscript><T k="ch.noscript" /></noscript>
+  </form>
+</section>
+
+<script is:inline>
+  (function () {
+    var form = document.querySelector('.chal-flag');
+    if (!form || !window.crypto || !crypto.subtle) return;
+    var input = form.querySelector('#chal-input');
+    var out = form.querySelector('#chal-result');
+    var want = (form.getAttribute('data-hash') || '').toLowerCase();
+
+    function msg(key) {
+      // i18n: 두 언어를 모두 넣고 CSS(.l-ko/.l-en)로 전환 — 사이트 전역 규칙과 동일
+      var m = {
+        empty: ['플래그를 입력하세요.', 'Enter a flag.'],
+        ok: ['정답입니다. 플래그를 찾았습니다. 🎉', 'Correct — flag accepted. 🎉'],
+        no: ['틀렸습니다. 랩에서 다시 확인해 보세요.', 'Incorrect — recheck your work in the lab.'],
+      }[key];
+      out.innerHTML = '<span class="l-ko">' + m[0] + '</span><span class="l-en" lang="en">' + m[1] + '</span>';
+    }
+
+    async function sha256Hex(s) {
+      var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+      return Array.prototype.map.call(new Uint8Array(buf), function (b) {
+        return ('0' + b.toString(16)).slice(-2);
+      }).join('');
+    }
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var val = (input.value || '').trim();
+      out.classList.remove('is-ok', 'is-no');
+      if (!val) { msg('empty'); return; }
+      var ok = (await sha256Hex(val)) === want;
+      msg(ok ? 'ok' : 'no');
+      out.classList.add(ok ? 'is-ok' : 'is-no');
+      form.classList.toggle('solved', ok);
+    });
+  })();
+</script>
+
+<style>
+  .chal {
+    margin: 32px 0 8px;
+    padding: 20px 22px;
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--accent) 5%, var(--bg-2));
+  }
+  .chal-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .chal-head h2 { margin: 0; font-size: 1.25rem; }
+  .chal-env {
+    font: 600 11px var(--mono); letter-spacing: .04em; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid var(--line-2); color: var(--fg-2); background: var(--bg);
+  }
+  .chal-env-docker { border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent-ink, var(--fg)); }
+  .chal-env-vulhub { border-color: color-mix(in srgb, var(--link) 45%, transparent); color: var(--link); }
+  .chal-rule { margin: 6px 0 16px; font-size: 13.5px; color: var(--muted); }
+  .chal h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 6px; }
+  .chal-objective p { margin: 0; }
+  .chal-tasks ol { margin: 0; padding-left: 1.3em; }
+  .chal-tasks li { margin: 4px 0; }
+  .chal-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 4px; }
+  .chal-getlab, .chal-vulhub {
+    display: inline-flex; align-items: center; gap: 6px; text-decoration: none;
+    font: 600 14px var(--sans); padding: 8px 14px; border-radius: var(--radius); border: 1px solid var(--line-2);
+  }
+  .chal-getlab { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .chal-getlab:hover { opacity: .9; }
+  .chal-vulhub { color: var(--link); }
+  .chal-vulhub:hover { border-color: var(--link); }
+  .chal-hint { border: 1px solid var(--line); border-radius: 8px; padding: 2px 12px; margin: 6px 0; background: var(--bg); }
+  .chal-hint summary { cursor: pointer; font: 600 13.5px var(--sans); color: var(--fg-2); padding: 6px 0; }
+  .chal-hint[open] summary { color: var(--fg); }
+  .chal-hint p { margin: 2px 0 10px; font-size: 14px; color: var(--fg-2); }
+  .chal-flag { margin-top: 22px; }
+  .chal-flag label { display: block; font-size: 13.5px; color: var(--fg-2); margin-bottom: 6px; }
+  .chal-flag label code { font: 600 12.5px var(--mono); background: var(--code-bg); padding: 1px 6px; border-radius: 4px; }
+  .chal-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chal-row input {
+    flex: 1 1 260px; min-width: 0; padding: 9px 12px; border-radius: var(--radius);
+    border: 1px solid var(--line-2); background: var(--bg); color: var(--fg); font: 500 14px var(--mono);
+  }
+  .chal-row input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .chal-row button {
+    padding: 9px 18px; border-radius: var(--radius); border: 1px solid var(--fg);
+    background: var(--fg); color: var(--bg); font: 600 14px var(--sans); cursor: pointer;
+  }
+  .chal-row button:hover { opacity: .9; }
+  .chal-result { margin: 10px 0 0; font-size: 14px; min-height: 1.2em; }
+  .chal-result.is-ok { color: var(--add-fg, #15803d); font-weight: 600; }
+  .chal-result.is-no { color: var(--del-fg, #b91c1c); }
+  .chal-flag.solved { }
+  .chal-flag noscript { display: block; margin-top: 8px; font-size: 13px; color: var(--muted); }
+</style>

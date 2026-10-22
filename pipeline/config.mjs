@@ -4,8 +4,8 @@
 const num = (v, d) => (v === undefined || v === '' ? d : Number(v));
 
 export const config = {
-  /** 최근 몇 시간 안에 공개된 CVE를 볼지 (매일 실행 기준 24 + 여유) */
-  lookbackHours: num(process.env.F2S_LOOKBACK_HOURS, 26),
+  /** 최근 몇 시간 안에 공개된 CVE를 볼지 (매주 실행 기준 168 + 여유) */
+  lookbackHours: num(process.env.F2S_LOOKBACK_HOURS, 170),
   /** 이 점수 이상만 후보 */
   minCvss: num(process.env.F2S_MIN_CVSS, 8.0),
   /** 한 번 실행에 만들 초안 최대 수 (API 비용 상한) */

@@ -5,7 +5,7 @@
 exploit-db식 무기 저장소가 아니라, 결함(flaw)이 어떻게 코드 실행(shell)까지 이어지는지와 **패치가 그 흐름을 어디서 끊는지**를 설명합니다. 무기화된 PoC는 싣지 않습니다.
 
 - 스택: **Astro 5 (static output)** — 선택 이유는 `astro.config.mjs` 상단 주석 참고
-- 콘텐츠: 외부 CVE 수집 파이프라인이 커밋하는 `content/posts/*.md`
+- 콘텐츠: `content/posts/*.md` — `pipeline/` 이 매일 초안을 만들고 사람이 검토해 공개
 - 런타임 외부 호출 없음 (폰트 self-host, 검색 인덱스는 정적 JSON, 다이어그램은 빌드타임 인라인 SVG)
 
 ---
@@ -49,6 +49,7 @@ src/
     rehype-external-links.mjs ← 외부 링크 새 탭 + 헤딩 앵커
   components/ layouts/ pages/ styles/
 scripts/verify-build.mjs ← 빌드 후 산출물 검증 (실패 시 exit 1 → 배포 중단)
+pipeline/                ← 자동 초안 파이프라인 (NVD → Claude → needs_review → 메일)
 ```
 
 ## 라우트
@@ -140,6 +141,50 @@ generated_by: pipeline     # 있으면 "파이프라인 생성 · 사람 검토 
          → 사람 검토 → status: published 로 변경 + content/posts/ 로 이동 → 커밋
          → CI: build + verify → 배포
 ```
+
+---
+
+## 자동 초안 파이프라인 (`pipeline/`)
+
+```
+매일 09:13 KST (GitHub Actions: cve-pipeline.yml)
+ 1) 수집   NVD API 에서 최근 26시간 공개 CVE
+ 2) 선별   CVSS ≥ 8.0, 이미 있는 글 제외, 패치 링크 있는 것 우선, 최대 3건
+ 3) 초안   Claude API (claude-opus-5-5 + 웹 검색/페치로 공식 출처 확인) → 8섹션 초안
+ 4) 저장   content/posts/<id>.md, status: needs_review  ← 사이트에 공개되지 않음
+           자동 검사: 무기화 패턴 줄 삭제, 섹션·flow·diff 유무 확인 → 경고로 기록
+ 5) 알림   drafts/<날짜> 브랜치로 검토 PR 생성 → REVIEW_EMAIL 로 검토 요청 메일 (PR 링크·검토 메모·경고 포함)
+ 6) 공개   사람이 PR 에서 고치고 status: published 로 바꿔 머지 → deploy.yml 이 재배포
+```
+
+모델에게는 확인한 사실만 쓰고, 확인하지 못한 부분은 `REVIEW_NOTES` 로 따로 보고하도록 지시합니다(메일과 PR 본문에 그대로 들어감). 그래도 AI 초안에는 틀린 내용이 섞일 수 있으니 **공식 출처 대조는 반드시 사람이** 하세요.
+
+### GitHub 설정 (한 번만)
+
+1. **Settings → Secrets and variables → Actions → Secrets** 에 추가:
+
+   | 이름 | 값 |
+   | --- | --- |
+   | `ANTHROPIC_API_KEY` | Claude API 키 (console.anthropic.com) |
+   | `REVIEW_EMAIL` | 검토 메일 받을 주소 |
+   | `SMTP_HOST` / `SMTP_PORT` | Gmail 이면 `smtp.gmail.com` / `465` |
+   | `SMTP_USER` / `SMTP_PASS` | 보내는 계정 / Gmail **앱 비밀번호**(2단계 인증 후 생성) |
+   | `NVD_API_KEY` (선택) | NVD 요청 한도 완화 |
+
+   받는 주소를 Secret 으로 두는 이유: 공개 저장소 코드에 메일 주소가 남으면 스팸 수집 대상이 됩니다.
+2. **Settings → Actions → General** → "Allow GitHub Actions to create and approve pull requests" 체크.
+3. (선택) **Variables** 에 `F2S_MIN_CVSS`, `F2S_MAX_DRAFTS`, `F2S_LOOKBACK_HOURS`.
+4. **Actions → cve-pipeline → Run workflow** 로 바로 한 번 실행해 볼 수 있습니다.
+
+### 로컬 실행
+
+```bash
+cp .env.example .env              # 값 채우기
+node --env-file=.env pipeline/run.mjs        # 초안 생성 + (SMTP 설정 시) 메일
+npm run pipeline:dry                          # Claude 호출 없이 후보 선별만 확인
+```
+
+비용 상한은 `F2S_MAX_DRAFTS`(실행당 초안 수)로 조절합니다.
 
 ---
 

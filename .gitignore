@@ -3,3 +3,6 @@ dist/
 .astro/
 .DS_Store
 *.log
+pipeline-output.json
+.env
+pr-body.md

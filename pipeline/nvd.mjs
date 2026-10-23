@@ -23,8 +23,8 @@ export async function fetchRecentCves({ lookbackHours, apiKey }) {
       startIndex: String(startIndex),
       noRejected: '',
     });
-    const res = await fetchWithRetry(`${API}?${params.toString().replace('noRejected=', 'noRejected')}`, apiKey);
-    const data = await res.json();
+    const url = `${API}?${params.toString().replace('noRejected=', 'noRejected')}`;
+    const data = await fetchJsonWithRetry(url, apiKey);
     out.push(...(data.vulnerabilities ?? []).map((v) => v.cve));
     startIndex += data.resultsPerPage ?? 0;
     if (!data.resultsPerPage || startIndex >= data.totalResults) break;
@@ -35,32 +35,37 @@ export async function fetchRecentCves({ lookbackHours, apiKey }) {
 
 const RETRYABLE = [403, 429, 500, 502, 503, 504];
 
-/** 한 번 요청 — 멈춘 연결은 60초 뒤 끊어 재시도로 넘긴다 (NVD 는 큰 응답에서 소켓을 자주 끊는다) */
-async function fetchOnce(url, apiKey) {
+/**
+ * 요청 한 번 — 헤더부터 본문(res.json())까지 같은 60초 타임아웃·abort 범위 안에서 처리한다.
+ * NVD 는 큰 응답의 "본문 다운로드 중"에 소켓을 끊는 일이 잦은데, 그 오류가 재시도 밖에서
+ * 터지지 않도록 본문 읽기까지 이 함수가 감싼다.
+ */
+async function fetchJson(url, apiKey) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 60_000);
   try {
-    return await fetch(url, { headers: apiKey ? { apiKey } : {}, signal: ac.signal });
+    const res = await fetch(url, { headers: apiKey ? { apiKey } : {}, signal: ac.signal });
+    if (!res.ok) {
+      const err = new Error(`NVD API ${res.status}: ${await res.text().catch(() => '')}`);
+      err.status = res.status;
+      throw err;
+    }
+    return await res.json();
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function fetchWithRetry(url, apiKey, tries = 5) {
+async function fetchJsonWithRetry(url, apiKey, tries = 5) {
   let lastErr;
   for (let i = 0; i < tries; i++) {
     try {
-      const res = await fetchOnce(url, apiKey);
-      if (res.ok) return res;
-      // 재시도 불가 상태코드는 즉시 실패
-      if (!RETRYABLE.includes(res.status))
-        throw new Error(`NVD API ${res.status}: ${await res.text().catch(() => '')}`);
-      lastErr = new Error(`NVD API ${res.status} (재시도 ${i + 1}/${tries})`);
+      return await fetchJson(url, apiKey);
     } catch (e) {
-      // 네트워크 오류(소켓 끊김·타임아웃 AbortError)는 재시도. 재시도 불가 상태코드는 위에서 throw → 그대로 전달
-      if (e instanceof Error && /^NVD API \d/.test(e.message)) throw e;
+      // 재시도 불가 상태코드(404 등)는 즉시 실패. 네트워크 오류(소켓 끊김·타임아웃)·재시도 가능 상태는 다시 시도
+      if (e.status && !RETRYABLE.includes(e.status)) throw e;
       lastErr = e;
-      console.warn(`[nvd] 요청 실패 (${i + 1}/${tries}): ${e.message} — 재시도`);
+      console.warn(`[nvd] 요청 실패 (${i + 1}/${tries}): ${String(e.message).slice(0, 120)} — 재시도`);
     }
     await sleep(Math.min(10_000 * (i + 1), 30_000));
   }

@@ -12,12 +12,12 @@
  *       npm run pipeline -- --no-mail
  * 결과 요약은 pipeline-output.json 에 남는다 (CI 가 PR 본문/메일에 사용).
  */
-import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.mjs';
 import { fetchRecentCves, select } from './nvd.mjs';
-import { writeDraft } from './draft.mjs';
+import { writeDraft, translateToKorean } from './draft.mjs';
 import { sendReviewMail } from './notify.mjs';
 import { findWeaponized } from '../src/plugins/safety-patterns.mjs';
 import { SECTIONS, matchSection } from '../src/lib/sections.mjs';
@@ -75,11 +75,17 @@ function toMarkdown(c, d) {
     d.difficulty ? `difficulty: ${d.difficulty}` : null,
     `generated_by: pipeline`,
     `title: ${q(d.title || c.id)}`,
-    `date: ${new Date().toISOString().slice(0, 10)}`,
+    `date: ${(c.published || new Date().toISOString()).slice(0, 10)}`,
     '---',
     '',
   ].filter((x) => x !== null);
   return { md: fm.join('\n') + d.body, cwe };
+}
+
+/** 영어 번역 파일(content/posts/en/<id>.md) — 표시 메인. 메타데이터는 기본 파일에만 둔다. */
+function toMarkdownEn(c, d) {
+  const fm = ['---', `id: ${c.id}`, `title: ${q(d.title || c.id)}`, '---', ''];
+  return fm.join('\n') + d.body;
 }
 
 async function main() {
@@ -98,18 +104,27 @@ async function main() {
   } else {
     for (const c of picked) {
       try {
-        console.log(`[pipeline] ${c.id} 초안 작성 중 (${config.model})…`);
-        const d = await writeDraft(c, { model: config.model });
-        const { body, warnings } = check(d.body);
-        const { md, cwe } = toMarkdown(c, { ...d, body });
+        console.log(`[pipeline] ${c.id} 영어 초안 작성 중 (${config.model})…`);
+        const d = await writeDraft(c, { model: config.model });            // 영어 = 메인
+        const en = check(d.body);
+        console.log(`[pipeline] ${c.id} 한국어 번역 중…`);
+        const ko = await translateToKorean({ title: d.title, body: en.body }, { model: config.model }); // 한국어 = 서브
+        const koc = check(ko.body);
+        const warnings = [...en.warnings, ...koc.warnings.map((w) => `KO: ${w}`)];
+        // 메인 파일(content/posts/<id>.md): 메타데이터 + 한국어 본문(렌더 측 body-ko)
+        const { md, cwe } = toMarkdown(c, { ...d, title: ko.title, body: koc.body });
         if (!cwe) warnings.push('CWE 를 정하지 못함 — 프런트매터 cwe 수정 필요');
         const file = `content/posts/${c.id}.md`;
         writeFileSync(join(root, file), md);
+        // 번역 파일(content/posts/en/<id>.md): 영어 본문(렌더 측 body-en, 기본 표시 언어)
+        const enFile = `content/posts/en/${c.id}.md`;
+        mkdirSync(join(root, 'content/posts/en'), { recursive: true });
+        writeFileSync(join(root, enFile), toMarkdownEn(c, { title: d.title, body: en.body }));
         result.drafts.push({
           id: c.id, file, title: d.title, cvss: c.cvss, severity: c.severity,
           cwe: cwe ?? '', cweLabel: d.cweLabel, reviewNotes: d.reviewNotes || '- 없음', warnings, model: d.model,
         });
-        console.log(`[pipeline] ✓ ${file}${warnings.length ? ` (경고 ${warnings.length})` : ''}`);
+        console.log(`[pipeline] ✓ ${file} + ${enFile}${warnings.length ? ` (경고 ${warnings.length})` : ''}`);
       } catch (e) {
         console.error(`[pipeline] ✗ ${c.id}: ${e.message}`);
         result.errors.push({ id: c.id, error: e.message });

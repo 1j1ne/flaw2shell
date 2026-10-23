@@ -38,7 +38,7 @@ const official = isCve
     ]
   : [];
 ---
-<Base title={`${p.id} — ${p.title}`} description={p.summary}>
+<Base title={`${p.id} — ${p.titleEn ?? p.title}`} description={p.summaryEn ?? p.summary}>
   <article class={`post ${hasEn ? 'has-en' : 'no-en'}`}>
     <nav class="crumbs" aria-label="breadcrumb">
       <a href={url()}><T k="nav.home" /></a><span aria-hidden="true">/</span>

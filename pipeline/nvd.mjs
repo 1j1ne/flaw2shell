@@ -18,7 +18,8 @@ export async function fetchRecentCves({ lookbackHours, apiKey }) {
     const params = new URLSearchParams({
       pubStartDate: nvdDate(start),
       pubEndDate: nvdDate(end),
-      resultsPerPage: '2000',
+      // 작은 페이지가 더 안정적이다 — 큰 응답은 NVD 가 중간에 연결을 끊는 일이 잦다
+      resultsPerPage: '500',
       startIndex: String(startIndex),
       noRejected: '',
     });
@@ -32,14 +33,38 @@ export async function fetchRecentCves({ lookbackHours, apiKey }) {
   return out;
 }
 
-async function fetchWithRetry(url, apiKey, tries = 4) {
-  for (let i = 0; ; i++) {
-    const res = await fetch(url, { headers: apiKey ? { apiKey } : {} });
-    if (res.ok) return res;
-    if (i >= tries - 1 || ![403, 429, 500, 502, 503, 504].includes(res.status))
-      throw new Error(`NVD API ${res.status}: ${await res.text().catch(() => '')}`);
-    await sleep(10_000 * (i + 1));
+const RETRYABLE = [403, 429, 500, 502, 503, 504];
+
+/** 한 번 요청 — 멈춘 연결은 60초 뒤 끊어 재시도로 넘긴다 (NVD 는 큰 응답에서 소켓을 자주 끊는다) */
+async function fetchOnce(url, apiKey) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 60_000);
+  try {
+    return await fetch(url, { headers: apiKey ? { apiKey } : {}, signal: ac.signal });
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+async function fetchWithRetry(url, apiKey, tries = 5) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetchOnce(url, apiKey);
+      if (res.ok) return res;
+      // 재시도 불가 상태코드는 즉시 실패
+      if (!RETRYABLE.includes(res.status))
+        throw new Error(`NVD API ${res.status}: ${await res.text().catch(() => '')}`);
+      lastErr = new Error(`NVD API ${res.status} (재시도 ${i + 1}/${tries})`);
+    } catch (e) {
+      // 네트워크 오류(소켓 끊김·타임아웃 AbortError)는 재시도. 재시도 불가 상태코드는 위에서 throw → 그대로 전달
+      if (e instanceof Error && /^NVD API \d/.test(e.message)) throw e;
+      lastErr = e;
+      console.warn(`[nvd] 요청 실패 (${i + 1}/${tries}): ${e.message} — 재시도`);
+    }
+    await sleep(Math.min(10_000 * (i + 1), 30_000));
+  }
+  throw lastErr;
 }
 
 /** NVD 레코드 → 사이트에 필요한 필드로 정규화 */
